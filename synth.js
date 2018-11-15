@@ -39,11 +39,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
     // PROCESSING CHAIN
-    const gain = audioCtx.createGain(); // node
+    const masterGain = audioCtx.createGain(); // node
     const filter = audioCtx.createBiquadFilter(); // node
 
     // CURRENT WAVEFORM
-    let waveform = 'sawtooth';
+    let waveform = 'sine';
 
     let numHarmonics = 1;
 
@@ -51,8 +51,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const activeOscillators = {};
 
     // CONNECTIONS
-    gain.connect(filter);
-    filter.connect(audioCtx.destination);
+    masterGain.connect(audioCtx.destination);
+    // masterGain.connect(filter);
+    // filter.connect(audioCtx.destination);
 
     // EVENT LISTENERS FOR SYNTH PARAM INTERFACE
     const waveformControl = document.getElementById('waveform');
@@ -67,13 +68,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
     const gainControl = document.getElementById('gain');
     gainControl.addEventListener('change', function(event) {
-        gain.gain.setValueAtTime(event.target.value, audioCtx.currentTime);
+        masterGain.gain.setValueAtTime(event.target.value, audioCtx.currentTime);
     });
 
-    const filterTypeControl = document.getElementById('filterType');
-    filterTypeControl.addEventListener('change', function(event) {
-        filter.type= event.target.value;
-    });
+    // const filterTypeControl = document.getElementById('filterType');
+    // filterTypeControl.addEventListener('change', function(event) {
+    //     filter.type= event.target.value;
+    // });
 
     const filterFrequencyControl = document.getElementById('filterFrequency');
     filterFrequencyControl.addEventListener('change', function(event) {
@@ -89,41 +90,58 @@ document.addEventListener("DOMContentLoaded", function(event) {
     function keyDown(event) {
         const key = (event.detail || event.which).toString();
         const fund = keyboardFrequencyMap[key];
-        var offset, freq;
 
-        for(var i = 1; i <= numHarmonics; i++) {
-            freq = fund*i;
-            offset = Math.floor(freq);
-            if(keyboardFrequencyMap[key] && !activeOscillators[offset]) {
-                playNote(freq, offset);
-            }
-        }
+        playNoteWithTamber(key, fund);
     }
 
     // STOPS AND DELETES OSCILLATOR ON KEY RELEASE IF KEY RELEASED IS ON MUSICAL
     // KEYBOARD AND THAT KEY IS CURRENTLY ACTIVE
     function keyUp(event) {
         const key = (event.detail || event.which).toString();
-        const fund = keyboardFrequencyMap[key];
-        var offset;
-        for(var i = 1; i <= numHarmonics; i++) {
-            offset = Math.floor(fund*i);
-            console.log("in keyup");
-            console.log(offset);
+        const freq = keyboardFrequencyMap[key];
+        stopNote(key, freq);
+    }
+
+    function stopNote(key, freq) {
+        var offset, freq;
+        tamberMode.map( harm => {
+            offset = Math.floor(freq*harm['harmonic']*1000);
             if(keyboardFrequencyMap[key] && activeOscillators[offset]) {
                 activeOscillators[offset].stop();
                 delete activeOscillators[offset];
             }
-        }
+        });
     }
 
-    function playNote(freq, offset) {
+    function playNote(freq, offset, gain) {
         osc = audioCtx.createOscillator();
         osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
         osc.type = waveform;
         activeOscillators[offset] = osc;
-        activeOscillators[offset].connect(gain);
+        const harmGain = audioCtx.createGain(); // node
+        harmGain.gain.setValueAtTime(gain, audioCtx.currentTime);
+        activeOscillators[offset].connect(harmGain);
+        harmGain.connect(masterGain);
         activeOscillators[offset].start();
+    }
+
+    const tamberMode = [ // square wave
+        {'harmonic': 1, 'gain': 1},
+        {'harmonic': 3, 'gain': .5},
+        {'harmonic': 5, 'gain': .25},
+        {'harmonic': 7, 'gain': .125},
+        {'harmonic': 8, 'gain': .065},
+    ];
+
+    function playNoteWithTamber(key, fund) {
+        var offset, freq;
+        tamberMode.map( harm => {
+            freq = fund*harm['harmonic'];
+            offset = Math.floor(freq*1000);
+            if(keyboardFrequencyMap[key] && !activeOscillators[offset]) {
+                playNote(freq, offset, harm['gain']);
+            }
+        });
     }
 
 });
